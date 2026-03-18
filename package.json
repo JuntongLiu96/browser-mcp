@@ -1,0 +1,20 @@
+{
+  "name": "browser-mcp",
+  "version": "1.0.0",
+  "description": "MCP server that provides browser control tools via a Chrome extension bridge",
+  "main": "dist/mcp-server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/mcp-server.js",
+    "install-host": "node install.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.9",
+    "@types/uuid": "^10.0.0",
+    "typescript": "^5.3.3"
+  }
+}

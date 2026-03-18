@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmd.exe:*)",
+      "Bash(powershell.exe:*)",
+      "Bash(powershell:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(node:*)",
+      "mcp__browser-mcp__browser_open",
+      "mcp__browser-mcp__browser_state",
+      "mcp__browser-mcp__browser_input",
+      "mcp__browser-mcp__browser_keys",
+      "mcp__browser-mcp__browser_get_text",
+      "mcp__browser-mcp__browser_scroll",
+      "mcp__browser-mcp__browser_close"
+    ]
+  }
+}
