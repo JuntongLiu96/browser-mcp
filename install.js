@@ -10,9 +10,48 @@ const os = require('os');
 const { execSync } = require('child_process');
 
 const HOST_NAME = 'com.browser.mcp.relay';
+const SOCK_PATH = '/tmp/browser-mcp-bridge.sock';
 
 function getAppDataDir() {
   return path.join(os.homedir(), '.browser-mcp');
+}
+
+/** Kill stale relay processes and remove leftover socket file. */
+function cleanupStaleRelay() {
+  console.log('Cleaning up stale relay processes and socket...');
+
+  if (process.platform === 'win32') {
+    try {
+      const out = execSync('wmic process where "CommandLine like \'%relay.js%\'" get ProcessId /format:list', { encoding: 'utf-8' });
+      const pids = out.match(/ProcessId=(\d+)/g);
+      if (pids) {
+        for (const m of pids) {
+          const pid = m.split('=')[1];
+          try { execSync(`taskkill /F /PID ${pid}`, { stdio: 'pipe' }); } catch {}
+        }
+      }
+    } catch {}
+  } else {
+    try {
+      const out = execSync("pgrep -f 'relay\\.js' 2>/dev/null", { encoding: 'utf-8' }).trim();
+      if (out) {
+        for (const pid of out.split('\n')) {
+          if (pid && pid !== String(process.pid)) {
+            try { process.kill(Number(pid), 'SIGTERM'); } catch {}
+          }
+        }
+        console.log(`  Killed stale relay process(es): ${out.replace(/\n/g, ', ')}`);
+      }
+    } catch {}
+
+    // Remove stale socket file
+    try {
+      fs.unlinkSync(SOCK_PATH);
+      console.log(`  Removed stale socket: ${SOCK_PATH}`);
+    } catch {}
+  }
+
+  console.log('  Cleanup done.');
 }
 
 function main() {
@@ -26,6 +65,9 @@ function main() {
     console.error('  3. Copy the extension ID (e.g. "abcdefghijklmnopqrstuvwxyz123456")');
     process.exit(1);
   }
+
+  // Clean up stale relay processes/socket before installing
+  cleanupStaleRelay();
 
   const relayDir = path.join(__dirname, 'relay');
   const relayScript = path.join(relayDir, 'relay.js');
@@ -44,7 +86,16 @@ function main() {
     console.log(`Created wrapper: ${wrapperPath}`);
   } else {
     wrapperPath = path.join(relayDir, 'relay.sh');
-    const content = `#!/bin/sh\nexec node "${relayScript}"\n`;
+    // Resolve absolute path to node — Chrome's native messaging uses a minimal PATH
+    // that doesn't include Homebrew (/opt/homebrew/bin) or nvm/fnm directories
+    let nodePath;
+    try {
+      nodePath = execSync('which node', { encoding: 'utf-8' }).trim();
+    } catch {
+      nodePath = 'node';
+      console.warn('Warning: Could not resolve absolute path to node. Native messaging may fail if node is not in the default PATH.');
+    }
+    const content = `#!/bin/sh\nexec "${nodePath}" "${relayScript}"\n`;
     fs.writeFileSync(wrapperPath, content, { mode: 0o755 });
     console.log(`Created wrapper: ${wrapperPath}`);
   }
@@ -117,7 +168,10 @@ function installWindows(manifest) {
 function installMacOS(manifest) {
   const dirs = [
     path.join(os.homedir(), 'Library', 'Application Support', 'Google', 'Chrome', 'NativeMessagingHosts'),
+    path.join(os.homedir(), 'Library', 'Application Support', 'Google', 'Chrome Canary', 'NativeMessagingHosts'),
+    path.join(os.homedir(), 'Library', 'Application Support', 'Chromium', 'NativeMessagingHosts'),
     path.join(os.homedir(), 'Library', 'Application Support', 'Microsoft Edge', 'NativeMessagingHosts'),
+    path.join(os.homedir(), 'Library', 'Application Support', 'Microsoft Edge Canary', 'NativeMessagingHosts'),
   ];
   for (const nmDir of dirs) {
     fs.mkdirSync(nmDir, { recursive: true });
