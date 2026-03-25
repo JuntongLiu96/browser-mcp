@@ -6,7 +6,28 @@
 
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 const net = require('net');
+
+// --- Logging (file-based, since Chrome native messaging stderr is not visible) ---
+const logFile = path.join(os.tmpdir(), 'browser-mcp-relay.log');
+function log(msg) {
+  const line = `[${new Date().toISOString()}] [Relay] ${msg}\n`;
+  process.stderr.write(line);
+  try { fs.appendFileSync(logFile, line); } catch {}
+}
+
+process.on('uncaughtException', (err) => {
+  log(`Uncaught exception: ${err.stack || err.message}`);
+  cleanup();
+});
+process.on('unhandledRejection', (err) => {
+  log(`Unhandled rejection: ${err}`);
+});
+
+log(`Starting... pid=${process.pid}`);
 
 const PIPE_PATH = process.platform === 'win32'
   ? '\\\\.\\pipe\\browser-mcp-bridge'
@@ -42,9 +63,9 @@ process.stdin.on('data', (chunk) => {
   drainInput();
 });
 
-process.stdin.on('end', () => { process.stderr.write('[Relay] stdin ended\n'); cleanup(); });
-process.stdin.on('close', () => { process.stderr.write('[Relay] stdin closed\n'); cleanup(); });
-process.stdin.on('error', (e) => { process.stderr.write(`[Relay] stdin error: ${e.message}\n`); cleanup(); });
+process.stdin.on('end', () => { log('stdin ended'); cleanup(); });
+process.stdin.on('close', () => { log('stdin closed'); cleanup(); });
+process.stdin.on('error', (e) => { log(`stdin error: ${e.message}`); cleanup(); });
 
 function drainInput() {
   while (inputBuffer.length >= 4) {
@@ -98,7 +119,6 @@ function forwardToChrome(json, sourceSocket) {
 function startPipeServer() {
   // On Unix, remove stale socket file
   if (process.platform !== 'win32') {
-    const fs = require('fs');
     try { fs.unlinkSync(PIPE_PATH); } catch {}
   }
 
@@ -133,18 +153,18 @@ function startPipeServer() {
   });
 
   pipeServer.on('error', (err) => {
-    process.stderr.write(`[Relay] Pipe server error: ${err.code} - ${err.message}\n`);
+    log(`Pipe server error: ${err.code} - ${err.message}`);
     if (err.code === 'EADDRINUSE') {
       // Another relay is already running — exit gracefully
+      log('EADDRINUSE — another relay is running, exiting');
       process.exit(0);
     }
   });
 
   pipeServer.listen(PIPE_PATH, () => {
-    process.stderr.write(`[Relay] Pipe server listening on ${PIPE_PATH}\n`);
+    log(`Pipe server listening on ${PIPE_PATH}`);
   });
 }
 
 // --- Start ---
-process.stderr.write('[Relay] Starting...\n');
 startPipeServer();
