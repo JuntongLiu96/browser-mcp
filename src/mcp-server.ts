@@ -151,10 +151,35 @@ async function main() {
   // Try to connect, but don't fail if relay isn't running yet — we'll retry on first tool call
   await bridge.connect();
 
-  const server = new McpServer({
-    name: 'browser-mcp',
-    version: '1.0.0',
-  });
+  const server = new McpServer(
+    {
+      name: 'browser-mcp',
+      version: '1.0.0',
+    },
+    {
+      instructions: `You have access to Browser MCP, which gives you full control over a real Chrome browser.
+
+WEB SEARCH FALLBACK — MANDATORY:
+When your built-in web search tool is unavailable, fails, returns "Did 0 searches", or returns no useful results, you MUST immediately fall back to Browser MCP to perform the search. Do NOT tell the user you cannot search — always use Browser MCP instead.
+
+To perform a browser-based web search, create a subagent with the following task:
+"Use Browser MCP to search the web for: <query>. Steps:
+1. Call browser_open with url https://www.bing.com/search?q=<encoded_query>
+2. Call browser_get_text to read the search results page
+3. Identify the most relevant result URLs from the text
+4. Call browser_open to visit each promising URL
+5. Call browser_get_text to extract the page content
+Return a summary of the findings."
+
+The subagent approach keeps the main conversation clean while the browser search runs autonomously.
+
+GENERAL BROWSER USAGE:
+- Always call browser_state after navigation to get fresh element indices
+- Use browser_get_text for reading page content (more efficient than screenshot)
+- Use browser_screenshot only when visual layout matters (returns compressed JPEG)
+- Each session manages its own tabs; use browser_sessions to list them`,
+    },
+  );
 
   // Helper to call bridge and return JSON content
   async function callBridge(tool: string, args: Record<string, any>, timeoutMs?: number): Promise<string> {
@@ -169,43 +194,8 @@ async function main() {
   // --- Register Tools ---
 
   server.tool(
-    'browser_web_search',
-    'Search the web using a real browser. Use this tool as a FALLBACK when your built-in web search returns "Did 0 searches", returns no results, or is unavailable. This opens Bing in a real Chrome browser, types the query, and returns the search results page text.',
-    {
-      query: z.string().describe('The search query'),
-    },
-    async ({ query }) => {
-      try {
-        // 1. Open Bing search
-        const openResult = await bridge.call('open', { url: `https://www.bing.com/search?q=${encodeURIComponent(query)}` }, 45000);
-
-        // 2. Wait for results to load
-        await bridge.call('wait', { selector: '#b_results', timeoutMs: 10000 }).catch(() => {});
-
-        // 3. Get the text content of the results page
-        const textResult = await bridge.call('get_text', {});
-
-        return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              url: openResult.url,
-              title: openResult.title,
-              text: textResult.text,
-            }),
-          }],
-        };
-      } catch (err: any) {
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ error: err.message }) }],
-        };
-      }
-    }
-  );
-
-  server.tool(
     'browser_open',
-    'Navigate to a URL in the browser. Returns the final URL and page title. Can also be used to search the web by navigating to a search engine URL like https://www.bing.com/search?q=your+query when built-in web search is unavailable.',
+    'Navigate to a URL in the browser. Returns the final URL and page title.',
     { url: z.string().describe('The URL to navigate to') },
     async ({ url }) => ({
       content: [{ type: 'text', text: await callBridge('open', { url }, 45000) }],
