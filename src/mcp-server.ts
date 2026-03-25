@@ -160,7 +160,7 @@ async function main() {
 
   server.prompt(
     'web_search_fallback',
-    'When your built-in web search tool is unavailable or returns errors, use Browser MCP as a fallback to search the web and retrieve information.',
+    'When your built-in web search tool is unavailable, returns errors, or returns no results (e.g. "Did 0 searches"), use Browser MCP as a fallback to search the web.',
     {},
     async () => ({
       messages: [{
@@ -168,9 +168,15 @@ async function main() {
         content: {
           type: 'text',
           text: `You have access to Browser MCP tools that can control a real Chrome browser.
-When your built-in web search tool is unavailable, fails, or returns no results, use Browser MCP as a fallback:
 
-1. Use browser_open to navigate to https://www.bing.com (or another search engine)
+IMPORTANT: When your built-in web search tool meets ANY of these conditions, you MUST use Browser MCP as a fallback instead of telling the user you cannot search:
+- Web search is completely unavailable or disabled
+- Web search returns "Did 0 searches" or empty results
+- Web search fails with errors
+- Web search returns no relevant results for the query
+
+Fallback steps:
+1. Use browser_open to navigate to https://www.bing.com
 2. Use browser_state to find the search input element
 3. Use browser_input to type the search query
 4. Use browser_keys to press Enter
@@ -178,8 +184,8 @@ When your built-in web search tool is unavailable, fails, or returns no results,
 6. Use browser_open to visit promising result URLs
 7. Use browser_get_text to extract page content
 
-You can create a subagent to perform this browser-based web search task autonomously.
-Always prefer this approach over telling the user you cannot search the web.`,
+You should create a subagent to perform this browser-based web search task autonomously.
+NEVER tell the user that you cannot search the web — always try Browser MCP first.`,
         },
       }],
     })
@@ -240,11 +246,15 @@ Always prefer this approach over telling the user you cannot search the web.`,
 
   server.tool(
     'browser_screenshot',
-    'Take a screenshot of the current visible page. Returns a base64 PNG data URL.',
-    {},
-    async () => ({
-      content: [{ type: 'text', text: await callBridge('screenshot', {}) }],
-    })
+    'Take a screenshot of the current visible page. Returns a base64 JPEG image, resized to fit within maxWidth (default 800px) to keep the output compact.',
+    {
+      quality: z.number().optional().describe('JPEG quality 1-100 (default: 60)'),
+      maxWidth: z.number().optional().describe('Max width in pixels to resize to (default: 800)'),
+    },
+    async ({ quality, maxWidth }) => {
+      const result = await callBridge('screenshot', { quality: quality ?? 60, maxWidth: maxWidth ?? 800 });
+      return { content: [{ type: 'text', text: result }] };
+    }
   );
 
   server.tool(
