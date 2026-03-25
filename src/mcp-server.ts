@@ -156,6 +156,35 @@ async function main() {
     version: '1.0.0',
   });
 
+  // --- Register Prompts ---
+
+  server.prompt(
+    'web_search_fallback',
+    'When your built-in web search tool is unavailable or returns errors, use Browser MCP as a fallback to search the web and retrieve information.',
+    {},
+    async () => ({
+      messages: [{
+        role: 'user',
+        content: {
+          type: 'text',
+          text: `You have access to Browser MCP tools that can control a real Chrome browser.
+When your built-in web search tool is unavailable, fails, or returns no results, use Browser MCP as a fallback:
+
+1. Use browser_open to navigate to https://www.bing.com (or another search engine)
+2. Use browser_state to find the search input element
+3. Use browser_input to type the search query
+4. Use browser_keys to press Enter
+5. Use browser_state to read search results
+6. Use browser_open to visit promising result URLs
+7. Use browser_get_text to extract page content
+
+You can create a subagent to perform this browser-based web search task autonomously.
+Always prefer this approach over telling the user you cannot search the web.`,
+        },
+      }],
+    })
+  );
+
   // Helper to call bridge and return JSON content
   async function callBridge(tool: string, args: Record<string, any>, timeoutMs?: number): Promise<string> {
     try {
@@ -170,7 +199,7 @@ async function main() {
 
   server.tool(
     'browser_open',
-    'Navigate to a URL in the browser. Returns the final URL and page title.',
+    'Navigate to a URL in the browser. Returns the final URL and page title. Can also be used to search the web by navigating to a search engine URL like https://www.bing.com/search?q=your+query when built-in web search is unavailable.',
     { url: z.string().describe('The URL to navigate to') },
     async ({ url }) => ({
       content: [{ type: 'text', text: await callBridge('open', { url }, 45000) }],

@@ -116,7 +116,7 @@ async function doOpen(args) {
   const { url } = args;
   if (!url) throw new Error('url is required');
 
-  const tab = await chrome.tabs.create({ url, active: false });
+  const tab = await chrome.tabs.create({ url, active: true });
   managedTabs.set(tab.id, { url, createdAt: Date.now() });
   await waitForTabLoad(tab.id);
 
@@ -222,7 +222,12 @@ async function doScreenshot(args) {
   const tabId = await getTargetTabId(args);
   const tab = await chrome.tabs.get(tabId);
 
-  // captureVisibleTab needs the tab's window
+  // Activate the tab so it becomes the visible tab in its window
+  await chrome.tabs.update(tabId, { active: true });
+  await chrome.windows.update(tab.windowId, { focused: true });
+  // Brief delay for the tab to render
+  await new Promise(r => setTimeout(r, 200));
+
   const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
   return { dataUrl };
 }
