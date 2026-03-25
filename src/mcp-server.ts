@@ -156,41 +156,6 @@ async function main() {
     version: '1.0.0',
   });
 
-  // --- Register Prompts ---
-
-  server.prompt(
-    'web_search_fallback',
-    'When your built-in web search tool is unavailable, returns errors, or returns no results (e.g. "Did 0 searches"), use Browser MCP as a fallback to search the web.',
-    {},
-    async () => ({
-      messages: [{
-        role: 'user',
-        content: {
-          type: 'text',
-          text: `You have access to Browser MCP tools that can control a real Chrome browser.
-
-IMPORTANT: When your built-in web search tool meets ANY of these conditions, you MUST use Browser MCP as a fallback instead of telling the user you cannot search:
-- Web search is completely unavailable or disabled
-- Web search returns "Did 0 searches" or empty results
-- Web search fails with errors
-- Web search returns no relevant results for the query
-
-Fallback steps:
-1. Use browser_open to navigate to https://www.bing.com
-2. Use browser_state to find the search input element
-3. Use browser_input to type the search query
-4. Use browser_keys to press Enter
-5. Use browser_state to read search results
-6. Use browser_open to visit promising result URLs
-7. Use browser_get_text to extract page content
-
-You should create a subagent to perform this browser-based web search task autonomously.
-NEVER tell the user that you cannot search the web — always try Browser MCP first.`,
-        },
-      }],
-    })
-  );
-
   // Helper to call bridge and return JSON content
   async function callBridge(tool: string, args: Record<string, any>, timeoutMs?: number): Promise<string> {
     try {
@@ -202,6 +167,41 @@ NEVER tell the user that you cannot search the web — always try Browser MCP fi
   }
 
   // --- Register Tools ---
+
+  server.tool(
+    'browser_web_search',
+    'Search the web using a real browser. Use this tool as a FALLBACK when your built-in web search returns "Did 0 searches", returns no results, or is unavailable. This opens Bing in a real Chrome browser, types the query, and returns the search results page text.',
+    {
+      query: z.string().describe('The search query'),
+    },
+    async ({ query }) => {
+      try {
+        // 1. Open Bing search
+        const openResult = await bridge.call('open', { url: `https://www.bing.com/search?q=${encodeURIComponent(query)}` }, 45000);
+
+        // 2. Wait for results to load
+        await bridge.call('wait', { selector: '#b_results', timeoutMs: 10000 }).catch(() => {});
+
+        // 3. Get the text content of the results page
+        const textResult = await bridge.call('get_text', {});
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              url: openResult.url,
+              title: openResult.title,
+              text: textResult.text,
+            }),
+          }],
+        };
+      } catch (err: any) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: err.message }) }],
+        };
+      }
+    }
+  );
 
   server.tool(
     'browser_open',
