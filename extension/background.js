@@ -116,7 +116,7 @@ async function doOpen(args) {
   const { url } = args;
   if (!url) throw new Error('url is required');
 
-  const tab = await chrome.tabs.create({ url, active: false });
+  const tab = await chrome.tabs.create({ url, active: true });
   managedTabs.set(tab.id, { url, createdAt: Date.now() });
   await waitForTabLoad(tab.id);
 
@@ -221,10 +221,49 @@ async function doState(args) {
 async function doScreenshot(args) {
   const tabId = await getTargetTabId(args);
   const tab = await chrome.tabs.get(tabId);
+  const quality = args.quality || 60;
+  const maxWidth = args.maxWidth || 800;
 
-  // captureVisibleTab needs the tab's window
-  const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
-  return { dataUrl };
+  // Activate the tab so it becomes the visible tab in its window
+  await chrome.tabs.update(tabId, { active: true });
+  await chrome.windows.update(tab.windowId, { focused: true });
+  // Brief delay for the tab to render
+  await new Promise(r => setTimeout(r, 200));
+
+  // Capture as JPEG with quality setting for smaller size
+  const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+    format: 'jpeg',
+    quality: quality,
+  });
+
+  // Resize using offscreen canvas in the page to reduce dimensions
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: (srcDataUrl, mw) => {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          let w = img.width;
+          let h = img.height;
+          if (w > mw) {
+            h = Math.round(h * (mw / w));
+            w = mw;
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', 0.6));
+        };
+        img.onerror = () => resolve(srcDataUrl);
+        img.src = srcDataUrl;
+      });
+    },
+    args: [dataUrl, maxWidth],
+  });
+
+  return { dataUrl: results[0]?.result || dataUrl };
 }
 
 // --- Tool: click ---

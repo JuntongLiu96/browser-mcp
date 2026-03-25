@@ -151,10 +151,35 @@ async function main() {
   // Try to connect, but don't fail if relay isn't running yet — we'll retry on first tool call
   await bridge.connect();
 
-  const server = new McpServer({
-    name: 'browser-mcp',
-    version: '1.0.0',
-  });
+  const server = new McpServer(
+    {
+      name: 'browser-mcp',
+      version: '1.0.0',
+    },
+    {
+      instructions: `You have access to Browser MCP, which gives you full control over a real Chrome browser.
+
+WEB SEARCH FALLBACK — MANDATORY:
+When your built-in web search tool is unavailable, fails, returns "Did 0 searches", or returns no useful results, you MUST immediately fall back to Browser MCP to perform the search. Do NOT tell the user you cannot search — always use Browser MCP instead.
+
+To perform a browser-based web search, create a subagent with the following task:
+"Use Browser MCP to search the web for: <query>. Steps:
+1. Call browser_open with url https://www.bing.com/search?q=<encoded_query>
+2. Call browser_get_text to read the search results page
+3. Identify the most relevant result URLs from the text
+4. Call browser_open to visit each promising URL
+5. Call browser_get_text to extract the page content
+Return a summary of the findings."
+
+The subagent approach keeps the main conversation clean while the browser search runs autonomously.
+
+GENERAL BROWSER USAGE:
+- Always call browser_state after navigation to get fresh element indices
+- Use browser_get_text for reading page content (more efficient than screenshot)
+- Use browser_screenshot only when visual layout matters (returns compressed JPEG)
+- Each session manages its own tabs; use browser_sessions to list them`,
+    },
+  );
 
   // Helper to call bridge and return JSON content
   async function callBridge(tool: string, args: Record<string, any>, timeoutMs?: number): Promise<string> {
@@ -211,11 +236,15 @@ async function main() {
 
   server.tool(
     'browser_screenshot',
-    'Take a screenshot of the current visible page. Returns a base64 PNG data URL.',
-    {},
-    async () => ({
-      content: [{ type: 'text', text: await callBridge('screenshot', {}) }],
-    })
+    'Take a screenshot of the current visible page. Returns a base64 JPEG image, resized to fit within maxWidth (default 800px) to keep the output compact.',
+    {
+      quality: z.number().optional().describe('JPEG quality 1-100 (default: 60)'),
+      maxWidth: z.number().optional().describe('Max width in pixels to resize to (default: 800)'),
+    },
+    async ({ quality, maxWidth }) => {
+      const result = await callBridge('screenshot', { quality: quality ?? 60, maxWidth: maxWidth ?? 800 });
+      return { content: [{ type: 'text', text: result }] };
+    }
   );
 
   server.tool(
